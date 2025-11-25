@@ -1,0 +1,27 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: task-manager-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: taskmanager
+    volumes:
+      - mongodb_data:/data/db
+
+  app:
+    build: .
+    container_name: task-manager-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/taskmanager
+      JWT_SECRET: your-super-secret-jwt-key
+      NODE_ENV: production
+    depends_on:
+      - mongodb
+
+volumes:
+  mongodb_data:
