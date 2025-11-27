@@ -1,0 +1,6 @@
+projectKey=2401041-TaskManager
+serverUrl=http://sonarqube.imcc.com
+serverVersion=25.1.0.102122
+dashboardUrl=http://sonarqube.imcc.com/dashboard?id=2401041-TaskManager
+ceTaskId=aee5dcf4-7ae0-4b0f-a977-51fd74ac6f15
+ceTaskUrl=http://sonarqube.imcc.com/api/ce/task?id=aee5dcf4-7ae0-4b0f-a977-51fd74ac6f15

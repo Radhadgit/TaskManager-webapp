@@ -11,7 +11,7 @@ pipeline {
     }
 
     tools {
-        nodejs 'nodejs' // Configure Node.js in Jenkins Global Tool Configuration
+        nodejs 'node18' // Updated to match your Node.js installation in Jenkins
     }
 
     stages {
