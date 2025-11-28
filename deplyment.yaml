@@ -17,16 +17,20 @@ spec:
     spec:
       containers:
         - name: taskmanager-container
-          image: nexus.imcc.com/task-manager-app:latest
+          image: nexus.imcc.com/repository/docker-repo/taskmanager-webapp:11  # Use the tag from Jenkins build
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:
             - name: MONGODB_URI
-              value: "mongodb://mongodb-service.taskmanager.svc.cluster.local:27017/taskmanager"
-
+              valueFrom:
+                secretKeyRef:
+                  name: taskmanager-secret
+                  key: MONGODB_URI
             - name: JWT_SECRET
-              value: "mysecret"
-
+              valueFrom:
+                secretKeyRef:
+                  name: taskmanager-secret
+                  key: JWT_SECRET
       imagePullSecrets:
         - name: nexus-secret
