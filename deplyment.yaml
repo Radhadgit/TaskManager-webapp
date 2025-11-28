@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskmanager-app
+  namespace: taskmanager
+  labels:
+    app: taskmanager-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskmanager-app
+  template:
+    metadata:
+      labels:
+        app: taskmanager-app
+    spec:
+      containers:
+        - name: taskmanager-container
+          image: nexus.imcc.com/task-manager-app:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            - name: MONGODB_URI
+              value: "mongodb://mongodb-service.taskmanager.svc.cluster.local:27017/taskmanager"
+
+            - name: JWT_SECRET
+              value: "mysecret"
+
+      imagePullSecrets:
+        - name: nexus-secret

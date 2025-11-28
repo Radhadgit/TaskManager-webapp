@@ -1,8 +1,35 @@
 pipeline {
-    agent any
-
-    tools {
-        nodejs 'node18'
+    agent {
+        kubernetes {
+            label 'taskmanager-agent'
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: taskmanager-agent
+spec:
+  containers:
+  - name: nodejs
+    image: node:18-bullseye
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+  - name: dind
+    image: docker:24-dind
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+  volumes:
+  - name: workspace-volume
+    emptyDir: {}
+"""
+        }
     }
 
     environment {
@@ -13,71 +40,77 @@ pipeline {
         NEXUS_URL = "http://nexus.imcc.com"
         REPO_NAME = "taskmanager-webapp"
         DOCKER_IMAGE = "taskmanager-webapp:latest"
+        SONAR_HOST_URL = "http://192.168.20.250:9000"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git credentialsId: "${GITHUB_CREDENTIALS}", 
-                    url: 'https://github.com/Radhadgit/TaskManager-webapp.git'
+                container('nodejs') {
+                    git credentialsId: "${GITHUB_CREDENTIALS}", 
+                        url: 'https://github.com/Radhadgit/TaskManager-webapp.git'
+                }
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm install'
+                container('nodejs') {
+                    sh 'npm install'
+                }
             }
         }
 
         stage('Run Tests') {
             steps {
-                sh 'npm test --if-present || echo "No tests found"'
+                container('nodejs') {
+                    sh 'npm test --if-present || echo "No tests found"'
+                }
             }
         }
 
         stage('SonarQube Analysis') {
-            environment {
-                SONAR_HOST_URL = "http://192.168.20.250:9000"
-            }
             steps {
-                withCredentials([string(credentialsId: "${SONAR_CREDENTIAL}", variable: 'SONAR_TOKEN')]) {
-                    sh """
-                        npx sonar-scanner \
-                        -Dsonar.projectKey=TaskManager-webapp \
-                        -Dsonar.sources=. \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.login=${SONAR_TOKEN}
-                    """
+                container('nodejs') {
+                    withCredentials([string(credentialsId: "${SONAR_CREDENTIAL}", variable: 'SONAR_TOKEN')]) {
+                        sh """
+                            npx sonar-scanner \
+                            -Dsonar.projectKey=TaskManager-webapp \
+                            -Dsonar.sources=. \
+                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.login=${SONAR_TOKEN}
+                        """
+                    }
                 }
             }
         }
 
         stage('Build Application') {
             steps {
-                sh 'npm run build'
+                container('nodejs') {
+                    sh 'npm run build'
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    sh """
-                        docker build -t ${DOCKER_IMAGE} .
-                    """
+                container('dind') {
+                    sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
         }
 
         stage('Push to Nexus Registry') {
             steps {
-                script {
+                container('dind') {
                     withCredentials([usernamePassword(credentialsId: "${NEXUS_CREDENTIALS}",
                                                      usernameVariable: 'NEXUS_USER',
                                                      passwordVariable: 'NEXUS_PASS')]) {
 
                         sh """
-                            docker login -u "$NEXUS_USER" -p "$NEXUS_PASS" ${NEXUS_URL}
+                            echo $NEXUS_PASS | docker login ${NEXUS_URL} --username $NEXUS_USER --password-stdin
                             docker tag ${DOCKER_IMAGE} ${NEXUS_URL}/repository/docker-hosted/${REPO_NAME}:latest
                             docker push ${NEXUS_URL}/repository/docker-hosted/${REPO_NAME}:latest
                         """
@@ -98,10 +131,10 @@ pipeline {
         }
 
         always {
-            echo "🧹 Cleaning workspace and pruning Docker images..."
-            sh '''
-                docker image prune -f || true
-            '''
+            container('dind') {
+                echo "🧹 Cleaning workspace and pruning Docker images..."
+                sh 'docker system prune -af || true'
+            }
             cleanWs()
         }
     }
