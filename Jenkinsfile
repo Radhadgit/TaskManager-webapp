@@ -13,42 +13,30 @@ spec:
   containers:
   - name: nodejs
     image: node:18
-    command:
-    - cat
+    command: ["cat"]
     tty: true
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
   - name: dind
     image: docker:24
     securityContext:
       privileged: true
     tty: true
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
   - name: jnlp
     image: jenkins/inbound-agent:latest
     tty: true
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-  volumes:
-  - name: workspace-volume
-    emptyDir: {}
 """
         }
     }
 
     environment {
         GITHUB_CREDENTIALS = 'github-2401041'
-        NEXUS_CREDENTIALS = 'nexus-41'
-        SONAR_CREDENTIAL  = 'sonar-token-2401041'
+        NEXUS_CREDENTIALS  = 'nexus-41'
+        SONAR_CREDENTIAL   = 'sonar-token-2401041'
 
         NEXUS_URL = "http://nexus.imcc.com"
         REPO_NAME = "taskmanager-webapp"
         DOCKER_IMAGE = "taskmanager-webapp:latest"
-        SONAR_HOST_URL = "http://192.168.20.250:9000"
+
+        SONAR_HOST_URL = "http://sonarqube.imcc.com"
     }
 
     stages {
@@ -83,13 +71,15 @@ spec:
             steps {
                 container('nodejs') {
                     withCredentials([string(credentialsId: "${SONAR_CREDENTIAL}", variable: 'SONAR_TOKEN')]) {
-                        sh """
-                            npx sonar-scanner \
-                            -Dsonar.projectKey=TaskManager-webapp \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
-                            -Dsonar.login=${SONAR_TOKEN}
-                        """
+                        withSonarQubeEnv('SonarQube-2401041') {
+                            sh """
+                                sonar-scanner \
+                                -Dsonar.projectKey=TaskManager-webapp \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=${SONAR_HOST_URL} \
+                                -Dsonar.login=${SONAR_TOKEN}
+                            """
+                        }
                     }
                 }
             }
@@ -131,23 +121,14 @@ spec:
     }
 
     post {
-
         success {
             echo "🎉 Build completed successfully!"
         }
-
         failure {
             echo "❌ Build failed!"
         }
-
         always {
-            container('dind') {
-                echo "🧹 Cleaning workspace and pruning Docker images..."
-                sh 'docker system prune -af || true'
-            }
-            container('nodejs') {
-                deleteDir()  // safely clean workspace inside a container
-            }
+            cleanWs()
         }
     }
 }
