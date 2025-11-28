@@ -2,6 +2,7 @@ pipeline {
     agent {
         kubernetes {
             label 'taskmanager-agent'
+            defaultContainer 'jnlp'
             yaml """
 apiVersion: v1
 kind: Pod
@@ -11,7 +12,7 @@ metadata:
 spec:
   containers:
   - name: nodejs
-    image: node:18-bullseye
+    image: node:18
     command:
     - cat
     tty: true
@@ -19,9 +20,16 @@ spec:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
   - name: dind
-    image: docker:24-dind
+    image: docker:24
     securityContext:
       privileged: true
+    tty: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+    tty: true
     volumeMounts:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
@@ -49,7 +57,8 @@ spec:
             steps {
                 container('nodejs') {
                     git credentialsId: "${GITHUB_CREDENTIALS}", 
-                        url: 'https://github.com/Radhadgit/TaskManager-webapp.git'
+                        url: 'https://github.com/Radhadgit/TaskManager-webapp.git',
+                        branch: 'main'
                 }
             }
         }
@@ -110,9 +119,10 @@ spec:
                                                      passwordVariable: 'NEXUS_PASS')]) {
 
                         sh """
-                            echo $NEXUS_PASS | docker login ${NEXUS_URL} --username $NEXUS_USER --password-stdin
+                            echo \$NEXUS_PASS | docker login ${NEXUS_URL} --username \$NEXUS_USER --password-stdin
                             docker tag ${DOCKER_IMAGE} ${NEXUS_URL}/repository/docker-hosted/${REPO_NAME}:latest
                             docker push ${NEXUS_URL}/repository/docker-hosted/${REPO_NAME}:latest
+                            docker logout ${NEXUS_URL}
                         """
                     }
                 }
@@ -135,7 +145,9 @@ spec:
                 echo "🧹 Cleaning workspace and pruning Docker images..."
                 sh 'docker system prune -af || true'
             }
-            cleanWs()
+            container('nodejs') {
+                deleteDir()  // safely clean workspace inside a container
+            }
         }
     }
 }
