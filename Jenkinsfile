@@ -25,7 +25,6 @@ spec:
       volumeMounts:
         - name: workspace-volume
           mountPath: /home/jenkins/agent
-
     - name: sonar-scanner
       image: sonarsource/sonar-scanner-cli
       tty: true
@@ -33,7 +32,6 @@ spec:
       volumeMounts:
         - name: workspace-volume
           mountPath: /home/jenkins/agent
-
     - name: dind
       image: docker:dind
       args: ["--storage-driver=overlay2"]
@@ -42,7 +40,6 @@ spec:
       volumeMounts:
         - name: workspace-volume
           mountPath: /home/jenkins/agent
-
     - name: jnlp
       image: jenkins/inbound-agent:3345.v03dee9b_f88fc-1
       env:
@@ -58,19 +55,15 @@ spec:
     }
 
     environment {
-        // Docker Images
-        CLIENT_IMAGE = "task-manager-app-2401084-cicd-main-app"  // your frontend image
-        SERVER_IMAGE = "mongo:7"                                 // your backend image
+        CLIENT_IMAGE = "task-manager-app-2401084-cicd-main-app"
         IMAGE_TAG    = "latest"
 
-        // SonarQube
         SONAR_PROJECT_KEY   = '2401041-TaskManager'
         SONAR_HOST_URL      = 'http://sonarqube.imcc.com'
         SONAR_PROJECT_TOKEN = 'sqp_5d82297fc3610d03b74745de66b3c994b41b39b4'
     }
 
     stages {
-
         stage('Install Frontend') {
             steps {
                 container('node') {
@@ -78,7 +71,8 @@ spec:
                         sh '''
                         set -e
                         npm install
-                        npm run build
+                        # Build using environment variable to avoid DB connection
+                        NEXT_PUBLIC_API_URL=http://localhost:3000 npm run build
                         '''
                     }
                 }
@@ -98,13 +92,13 @@ spec:
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Build Docker Image') {
             steps {
                 container('dind') {
                     sh '''
                     set -e
+                    # Build frontend image (multi-stage Dockerfile)
                     docker build -t ${CLIENT_IMAGE}:${IMAGE_TAG} ./client
-                    docker build -t ${SERVER_IMAGE}:${IMAGE_TAG} ./server
                     '''
                 }
             }
@@ -116,7 +110,7 @@ spec:
                     sh """
                     sonar-scanner \
                       -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                      -Dsonar.sources=. \
+                      -Dsonar.sources=client \
                       -Dsonar.host.url=${SONAR_HOST_URL} \
                       -Dsonar.login=${SONAR_PROJECT_TOKEN}
                     """
@@ -124,13 +118,12 @@ spec:
             }
         }
 
-        stage('Run Docker Images') {
+        stage('Run Docker Image') {
             steps {
                 container('dind') {
                     sh '''
                     set -e
-                    docker run -d --name client-container ${CLIENT_IMAGE}:${IMAGE_TAG}
-                    docker run -d --name server-container ${SERVER_IMAGE}:${IMAGE_TAG}
+                    docker run -d --name task-manager-app -p 3000:3000 ${CLIENT_IMAGE}:${IMAGE_TAG}
                     '''
                 }
             }
@@ -139,7 +132,8 @@ spec:
 
     post {
         always {
-            cleanWs()
+            // deleteDir() works for Kubernetes agent instead of cleanWs()
+            deleteDir()
         }
         success {
             echo "✅ Pipeline completed successfully!"
