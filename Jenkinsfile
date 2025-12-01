@@ -56,10 +56,8 @@ spec:
         REGISTRY_REPO = "docker-repo"
         IMAGE_NAME = "taskmanager-webapp"
 
-        NEXUS_USER = "admin"
-        NEXUS_PASS = "Changeme@2025"
-
         K8S_NAMESPACE = "taskmanager"
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
@@ -90,8 +88,7 @@ spec:
                     sh '''
                         echo "Waiting for Docker daemon..."
                         sleep 15
-
-                        docker build -t taskmanager-webapp:${BUILD_NUMBER} .
+                        docker build -t ${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG} .
                         docker image ls
                     '''
                 }
@@ -101,13 +98,13 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    sh '''
+                    sh """
                         sonar-scanner \
-                          -Dsonar.projectKey=2401041-TaskManager \
+                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                           -Dsonar.sources=. \
-                          -Dsonar.host.url=http://sonarqube.imcc.com \
-                          -Dsonar.login=''' + SONAR_TOKEN + '''
-                    '''
+                          -Dsonar.host.url=${SONAR_HOST_URL} \
+                          -Dsonar.login=${SONAR_TOKEN}
+                    """
                 }
             }
         }
@@ -115,9 +112,12 @@ spec:
         stage('Login to Nexus Registry') {
             steps {
                 container('dind') {
-                    sh '''
-                        docker login nexus.imcc.com -u admin -p Changeme@2025
-                    '''
+                    withCredentials([usernamePassword(credentialsId: 'nexus-41', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                        sh '''
+                            echo "Logging in to Nexus..."
+                            docker login ${REGISTRY_URL} -u $NEXUS_USER -p $NEXUS_PASS
+                        '''
+                    }
                 }
             }
         }
@@ -126,8 +126,7 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                        docker tag taskmanager-webapp:${BUILD_NUMBER} nexus.imcc.com/repository/docker-repo/taskmanager-webapp:${BUILD_NUMBER}
-                        docker push nexus.imcc.com/repository/docker-repo/taskmanager-webapp:${BUILD_NUMBER}
+                        docker push ${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
@@ -138,12 +137,11 @@ spec:
                 container('kubectl') {
                     sh '''
                         echo "Updating Deployment image..."
-
                         kubectl set image deployment/taskmanager-app \
-                            taskmanager-container=nexus.imcc.com/repository/docker-repo/taskmanager-webapp:${BUILD_NUMBER} \
-                            -n taskmanager
+                            taskmanager-container=${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG} \
+                            -n ${K8S_NAMESPACE}
 
-                        kubectl rollout status deployment/taskmanager-app -n taskmanager
+                        kubectl rollout status deployment/taskmanager-app -n ${K8S_NAMESPACE}
                     '''
                 }
             }
@@ -152,7 +150,7 @@ spec:
 
     post {
         success {
-            echo "🚀 Deployment Successful! Image tag: ${BUILD_NUMBER}"
+            echo "🚀 Deployment Successful! Image tag: ${IMAGE_TAG}"
         }
         failure {
             echo "❌ Deployment Failed — Check Logs!"
