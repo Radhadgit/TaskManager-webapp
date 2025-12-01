@@ -132,21 +132,30 @@ spec:
                 }
             }
         }
-    }
 
-    stage('Deploy AI Application') {
+        stage('Deploy AI Application') {
             steps {
                 container('kubectl') {
-                    script {
-                            sh '''
-                                # Apply all resources in deployment YAML
-                                kubectl apply -f deplyment.yaml
-                                kubectl apply -f service.yaml
-
-                            '''
-                        
-                    }
+                    sh '''
+                        # Apply Kubernetes resources
+                        kubectl apply -f deployment.yaml
+                        kubectl apply -f service.yaml
+                    '''
                 }
             }
-          }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()
+        }
+        success {
+            echo "Build completed successfully!"
+        }
+        failure {
+            echo "Build failed. Check logs."
+        }
+    }
 }
