@@ -69,7 +69,8 @@ spec:
     environment {
         SONAR_TOKEN = credentials('sonar-token-2401041')
         DOCKER_IMAGE = "taskmanager-webapp:latest"
-        MONGO_HOST = "task-manager-mongodb"
+        REGISTRY_URL = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REGISTRY_PROJECT = "2401041-project"
     }
 
     stages {
@@ -105,9 +106,7 @@ spec:
         stage('Run Tests') {
             steps {
                 container('nodejs') {
-                    sh '''
-                        echo "Skipping tests or add 'npm test' if available"
-                    '''
+                    sh 'echo "Skipping tests or add npm test"'
                 }
             }
         }
@@ -125,31 +124,23 @@ spec:
                 }
             }
         }
-         stage('Login to Docker Registry') {
+
+        stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    sh 'docker --version'
-                    sh 'sleep 10'
-                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
-                }
-            }
-        }
-        stage('Build - Tag - Push') {
-            steps {
-                container('dind') {
-                    sh 'docker tag taskmanager-app:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401199-project/face-detection:latest'
-                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-app:latest'
-                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-app:latest'
-                    sh 'docker image ls'
+                    sh 'docker login $REGISTRY_URL -u admin -p Changeme@2025'
                 }
             }
         }
 
-        stage('Push Docker Image (Optional)') {
+        stage('Build - Tag - Push') {
             steps {
                 container('dind') {
                     sh '''
-                        echo "Docker push to Nexus/registry if configured"
+                        docker tag taskmanager-webapp:latest $REGISTRY_URL/$REGISTRY_PROJECT/taskmanager-webapp:latest
+                        docker push $REGISTRY_URL/$REGISTRY_PROJECT/taskmanager-webapp:latest
+                        docker pull $REGISTRY_URL/$REGISTRY_PROJECT/taskmanager-webapp:latest
+                        docker image ls
                     '''
                 }
             }
