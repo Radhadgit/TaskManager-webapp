@@ -1,65 +1,76 @@
 pipeline {
     agent {
         kubernetes {
-            yaml '''
+            label '2401041-taskmanager-agent'
+            defaultContainer 'nodejs'
+            yaml """
 apiVersion: v1
 kind: Pod
+metadata:
+  labels:
+    app: taskmanager-agent
 spec:
   containers:
   - name: nodejs
     image: node:18-alpine
-    command:
-    - cat
+    command: ["cat"]
     tty: true
-
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
   - name: dind
     image: docker:24-dind
     securityContext:
       privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
-    command: ["dockerd-entrypoint.sh"]
-    args: ["--host=tcp://0.0.0.0:2375"]
     tty: true
-
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
   - name: kubectl
     image: bitnami/kubectl:latest
-    command:
-    - cat
+    command: ["cat"]
     tty: true
-    securityContext:
-      runAsUser: 0
-      readOnlyRootFilesystem: false
-    env:
-    - name: KUBECONFIG
-      value: /kube/config
     volumeMounts:
-    - name: kubeconfig-secret
-      mountPath: /kube/config
-      subPath: kubeconfig
-
+      - mountPath: /kube/config
+        name: kubeconfig-secret
+        subPath: kubeconfig
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
-    command:
-    - cat
+    command: ["cat"]
     tty: true
-
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
+  - name: jnlp
+    image: jenkins/inbound-agent:3345.v03dee9b_f88fc-1
+    env:
+      - name: JENKINS_AGENT_WORKDIR
+        value: /home/jenkins/agent
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
   volumes:
-  - name: kubeconfig-secret
-    secret:
-      secretName: kubeconfig-secret
-'''
+    - name: workspace-volume
+      emptyDir: {}
+    - name: kubeconfig-secret
+      secret:
+        secretName: kubeconfig-secret
+"""
         }
     }
 
-    stages {
+    environment {
+        SONAR_TOKEN = credentials('sonar-token-2401041')
+        DOCKER_IMAGE = "taskmanager-webapp:latest"
+        MONGO_HOST = "task-manager-mongodb"
+    }
 
+    stages {
         stage('Checkout Code') {
             steps {
-                container('nodejs') {
-                    git url: "https://github.com/Radhadgit/TaskManager-webapp.git", branch: "main"
-                }
+                git url: 'https://github.com/Radhadgit/TaskManager-webapp.git', branch: 'main'
             }
         }
 
@@ -78,8 +89,7 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                        sleep 10
-                        docker build -t  taskmanager-webapp:latest .
+                        docker build -t $DOCKER_IMAGE .
                         docker image ls
                     '''
                 }
@@ -90,8 +100,7 @@ spec:
             steps {
                 container('nodejs') {
                     sh '''
-                        echo "Skipping tests or add npm test if available"
-                        # npm test
+                        echo "Skipping tests or add 'npm test' if available"
                     '''
                 }
             }
@@ -100,49 +109,41 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    withCredentials([string(credentialsId: 'sonar-token-2401041', variable: 'SONAR_TOKEN')]) {
-                        sh '''
-                            sonar-scanner \
-                              -Dsonar.projectKey=2401041-TaskManager \
-                              -Dsonar.sources=. \
-                              -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-                              -Dsonar.login=$SONAR_TOKEN
-                        '''
-                    }
+                    sh """
+                        sonar-scanner \
+                        -Dsonar.projectKey=2401041-TaskManager \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
+                        -Dsonar.login=$SONAR_TOKEN
+                    """
                 }
             }
         }
 
-        stage('Login to Docker Registry') {
+        stage('Push Docker Image (Optional)') {
             steps {
                 container('dind') {
-                    sh 'docker --version'
-                    sh 'sleep 10'
-                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
-                }
-            }
-        }
-        stage('Build - Tag - Push') {
-            steps {
-                container('dind') {
-                    sh 'docker tag taskmanager-webapp:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-webapp:latest'
-                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-webapp:latest'
-                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-webapp:latest'
-                    sh 'docker image ls'
-                }
-            }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                container('kubectl') {
                     sh '''
-                        kubectl apply -f deplyment.yaml
-                        kubectl apply -f service.yaml
+                        echo "Docker push to Nexus/registry if configured"
+                        # docker login -u $NEXUS_USER -p $NEXUS_PASS $NEXUS_URL
+                        # docker tag $DOCKER_IMAGE $NEXUS_URL/$DOCKER_IMAGE
+                        # docker push $NEXUS_URL/$DOCKER_IMAGE
                     '''
                 }
             }
         }
     }
 
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()
+        }
+        success {
+            echo "Build completed successfully!"
+        }
+        failure {
+            echo "Build failed. Check logs."
+        }
+    }
 }
