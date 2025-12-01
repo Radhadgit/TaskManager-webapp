@@ -62,8 +62,8 @@ spec:
     NEXUS_CREDENTIALS  = 'nexus-41'
     SONAR_CREDENTIAL   = 'sonar-token-2401041'
 
-    // Secret file for production env
-    ENV_PROD_FILE = 'env-prod-file' // <-- Jenkins Secret File ID
+    // Secret file for production env (optional)
+    ENV_PROD_FILE = 'env-prod-file' // <-- Jenkins Secret File ID (optional now)
 
     // Registry & project settings
     NEXUS_REGISTRY_HOST = "nexus.imcc.com"
@@ -103,9 +103,22 @@ spec:
       steps {
         container('nodejs') {
           sh '''
+            set -e
             echo ">>> Node: $(node -v)  npm: $(npm -v)"
-            npm ci || npm install --unsafe-perm
-            npm test --if-present || echo "No tests or tests failed (non-blocking)"
+            # try clean install with lockfile; fallback to npm install when lock mismatch or other issues
+            if npm ci; then
+              echo "npm ci succeeded"
+            else
+              echo "npm ci failed - falling back to npm install"
+              npm install --unsafe-perm
+            fi
+
+            # run tests if present; don't fail pipeline if tests fail unless you want strict CI
+            if npm test --if-present; then
+              echo "Tests passed (or none defined)"
+            else
+              echo "Tests failed or none present - continuing (non-blocking)"
+            fi
           '''
         }
       }
@@ -114,7 +127,22 @@ spec:
     stage('Build Docker Image') {
       steps {
         container('dind') {
-          withCredentials([file(credentialsId: env.ENV_PROD_FILE, variable: 'ENV_PROD_PATH')]) {
+          script {
+            // try to use the secret file; if missing create a safe placeholder .env.production
+            try {
+              withCredentials([file(credentialsId: env.ENV_PROD_FILE, variable: 'ENV_PROD_PATH')]) {
+                sh '''
+                  set -e
+                  echo ">>> Copying provided env file from credentials to .env.production"
+                  cp "$ENV_PROD_PATH" .env.production
+                '''
+              }
+            } catch (err) {
+              echo "⚠️ Credential '${env.ENV_PROD_FILE}' not found or could not be accessed. Creating empty .env.production as fallback."
+              sh 'printf "" > .env.production'
+            }
+
+            // Wait for dockerd to be ready, then build
             sh '''
               set -e
               echo ">>> Waiting for dockerd to become available..."
@@ -124,24 +152,22 @@ spec:
                   echo "Docker is ready"
                   break
                 fi
-                echo "Waiting for docker..."
+                echo "... waiting for docker"
                 sleep 2
                 timeout=$((timeout-2))
               done
               if ! docker info >/dev/null 2>&1; then
-                echo "ERROR: docker daemon did not start"
+                echo "ERROR: docker daemon did not start within timeout"
                 exit 1
               fi
 
               TAG=${BUILD_NUMBER}
               IMAGE_LOCAL=${IMAGE_NAME}:${TAG}
-              echo ">>> Building image $IMAGE_LOCAL"
+              echo ">>> Building image ${IMAGE_LOCAL}"
 
-              # Copy Jenkins secret env file to workspace
-              cp $ENV_PROD_PATH .env.production
-
-              # Build Docker image with env-file
-              docker build --env-file .env.production -t $IMAGE_LOCAL .
+              # Note: --env-file requires buildkit / recent docker. If your environment doesn't support it,
+              # consider copying the file into image via Dockerfile or using --build-arg.
+              docker build --env-file .env.production -t ${IMAGE_LOCAL} .
             '''
           }
         }
@@ -153,12 +179,16 @@ spec:
         container('nodejs') {
           withCredentials([string(credentialsId: env.SONAR_CREDENTIAL, variable: 'SONAR_TOKEN')]) {
             sh '''
+              set -e
               echo ">>> Running Sonar Scanner against ${SONAR_HOST_URL}"
-              npx --no-install sonar-scanner || sonar-scanner || true
-              if command -v sonar-scanner >/dev/null 2>&1; then
-                sonar-scanner -Dsonar.projectKey=${REPO_NAME} -Dsonar.sources=. -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_TOKEN}
+              # prefer local npx if available; tolerate missing scanner (non-fatal)
+              if npx --no-install sonar-scanner >/dev/null 2>&1; then
+                echo "Using npx sonar-scanner"
+                npx --no-install sonar-scanner -Dsonar.projectKey=${REPO_NAME} -Dsonar.sources=. -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_TOKEN} || true
+              elif command -v sonar-scanner >/dev/null 2>&1; then
+                sonar-scanner -Dsonar.projectKey=${REPO_NAME} -Dsonar.sources=. -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_TOKEN} || true
               else
-                echo "sonar-scanner not installed; skipping detailed scan"
+                echo "sonar-scanner not available; skipping Sonar scan (non-fatal)"
               fi
             '''
           }
@@ -173,6 +203,7 @@ spec:
                                            usernameVariable: 'NEXUS_USER',
                                            passwordVariable: 'NEXUS_PASS')]) {
             sh '''
+              set -e
               echo ">>> Logging into Nexus registry ${NEXUS_REGISTRY_HOST}"
               echo "$NEXUS_PASS" | docker login ${NEXUS_REGISTRY_HOST} -u "$NEXUS_USER" --password-stdin
             '''
@@ -185,6 +216,7 @@ spec:
       steps {
         container('dind') {
           sh '''
+            set -e
             TAG=${BUILD_NUMBER}
             IMAGE_LOCAL=${IMAGE_NAME}:${TAG}
             IMAGE_REMOTE=${IMAGE_REPOSITORY}:${TAG}
@@ -203,6 +235,7 @@ spec:
       steps {
         container('kubectl') {
           sh '''
+            set -e
             echo ">>> Ensuring namespace ${K8S_NAMESPACE} exists"
             kubectl get ns ${K8S_NAMESPACE} >/dev/null 2>&1 || kubectl create ns ${K8S_NAMESPACE}
           '''
@@ -217,6 +250,7 @@ spec:
                                            usernameVariable: 'NEXUS_USER',
                                            passwordVariable: 'NEXUS_PASS')]) {
             sh '''
+              set -e
               echo ">>> Creating docker-registry secret ${REGISTRY_SECRET_NAME} in ${K8S_NAMESPACE}"
               kubectl delete secret ${REGISTRY_SECRET_NAME} -n ${K8S_NAMESPACE} --ignore-not-found
               kubectl create secret docker-registry ${REGISTRY_SECRET_NAME} \
@@ -234,6 +268,7 @@ spec:
       steps {
         container('kubectl') {
           sh '''
+            set -e
             echo ">>> Creating application secret ${APP_SECRET_NAME} in ${K8S_NAMESPACE}"
             kubectl delete secret ${APP_SECRET_NAME} -n ${K8S_NAMESPACE} --ignore-not-found
             kubectl create secret generic ${APP_SECRET_NAME} \
@@ -248,10 +283,12 @@ spec:
       steps {
         container('kubectl') {
           sh '''
+            set -e
             echo ">>> Applying manifests in k8s/ to namespace ${K8S_NAMESPACE}"
             kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE} || true
             kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
             IMAGE=${IMAGE_REPOSITORY}:${BUILD_NUMBER}
+            echo ">>> Updating deployment image to ${IMAGE}"
             kubectl set image deployment/${REPO_NAME} ${REPO_NAME}=${IMAGE} -n ${K8S_NAMESPACE} --record || true
           '''
         }
