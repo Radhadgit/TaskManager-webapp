@@ -6,40 +6,41 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: nodejs
-    image: node:18
-    command: ["cat"]
-    tty: true
-
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
-    command: ["cat"]
+    command:
+    - cat
     tty: true
-
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+    - cat
+    tty: true
+    securityContext:
+      runAsUser: 0
+      readOnlyRootFilesystem: false
+    env:
+    - name: KUBECONFIG
+      value: /kube/config        
+    volumeMounts:
+    - name: kubeconfig-secret
+      mountPath: /kube/config
+      subPath: kubeconfig
   - name: dind
-    image: docker:24-dind
+    image: docker:dind
     securityContext:
       privileged: true
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
-    command: ["dockerd-entrypoint.sh"]
-    args: ["--host=tcp://0.0.0.0:2375"]
-    tty: true
-
-  - name: kubectl
-    image: bitnami/kubectl:latest
-    command: ["cat"]
-    tty: true
-    env:
-    - name: KUBECONFIG
-      value: /kube/config
     volumeMounts:
-    - name: kubeconfig-secret
-      mountPath: /kube/config
-      subPath: kubeconfig
-
+    - name: docker-config
+      mountPath: /etc/docker/daemon.json
+      subPath: daemon.json
   volumes:
+  - name: docker-config
+    configMap:
+      name: docker-daemon-config
   - name: kubeconfig-secret
     secret:
       secretName: kubeconfig-secret
@@ -47,49 +48,26 @@ spec:
         }
     }
 
-    environment {
-        SONAR_PROJECT_KEY = "2401041-TaskManager"
-        SONAR_TOKEN = credentials('sonar-token-2401041')
-        SONAR_HOST_URL = "http://sonarqube.imcc.com"
-
-        REGISTRY_URL = "nexus.imcc.com"
-        REGISTRY_REPO = "docker-repo"
-        IMAGE_NAME = "taskmanager-webapp"
-
-        K8S_NAMESPACE = "taskmanager"
-        IMAGE_TAG = "${BUILD_NUMBER}"
-    }
-
     stages {
 
-        stage('Checkout Code') {
+        stage('Build Docker Image') {
             steps {
-                container('nodejs') {
-                    git url: "https://github.com/Radhadgit/TaskManager-webapp.git", branch: "main"
-                }
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                container('nodejs') {
+                container('dind') {
                     sh '''
-                        npm install
-                        echo "Node version: $(node -v)"
-                        echo "NPM version: $(npm -v)"
+                        sleep 15
+                        docker build -t taskmanager-webapp:latest .
+                        docker image ls
                     '''
                 }
             }
         }
 
-        stage('Docker Build') {
+        stage('Run Tests in Docker') {
             steps {
                 container('dind') {
                     sh '''
-                        echo "Waiting for Docker daemon..."
-                        sleep 15
-                        docker build -t ${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG} .
-                        docker image ls
+                        docker run --rm taskmanager-webapp:latest \
+                        npm test
                     '''
                 }
             }
@@ -98,62 +76,59 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    sh """
-                        sonar-scanner \
-                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                          -Dsonar.sources=. \
-                          -Dsonar.host.url=${SONAR_HOST_URL} \
-                          -Dsonar.login=${SONAR_TOKEN}
-                    """
-                }
-            }
-        }
-
-        stage('Login to Nexus Registry') {
-            steps {
-                container('dind') {
-                    withCredentials([usernamePassword(credentialsId: 'nexus-41', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    withCredentials([string(credentialsId: 'sonar-token-2401041', variable: 'SONAR_TOKEN')]) {
                         sh '''
-                            echo "Logging in to Nexus..."
-                            docker login ${REGISTRY_URL} -u $NEXUS_USER -p $NEXUS_PASS
+                            sonar-scanner \
+                                -Dsonar.projectKey=2401041-TaskManager \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
+                                -Dsonar.login=$SONAR_TOKEN
                         '''
                     }
                 }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    sh '''
-                        docker push ${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                    '''
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus.imcc.com -u student -p Imcc@2025'
                 }
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Build - Tag - Push') {
+            steps {
+                container('dind') {
+                    sh 'docker tag taskmanager-webapp:latest nexus.imcc.com/repository/docker-repo/taskmanager-webapp:latest'
+                    sh 'docker push nexus.imcc.com/repository/docker-repo/taskmanager-webapp:latest'
+                    sh 'docker pull nexus.imcc.com/repository/docker-repo/taskmanager-webapp:latest'
+                    sh 'docker image ls'
+                }
+            }
+        }
+
+        stage('Deploy TaskManager Application') {
             steps {
                 container('kubectl') {
-                    sh '''
-                        echo "Updating Deployment image..."
-                        kubectl set image deployment/taskmanager-app \
-                            taskmanager-container=${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG} \
-                            -n ${K8S_NAMESPACE}
-
-                        kubectl rollout status deployment/taskmanager-app -n ${K8S_NAMESPACE}
-                    '''
+                    script {
+                        dir('k8s-deployment') {
+                            sh '''
+                                kubectl apply -f taskmanager-deployment.yaml
+                                kubectl rollout status deployment/taskmanager-deployment -n 2401041
+                            '''
+                        }
+                    }
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "🚀 Deployment Successful! Image tag: ${IMAGE_TAG}"
-        }
         failure {
-            echo "❌ Deployment Failed — Check Logs!"
+            echo '❌ Deployment Failed — Check Logs!'
         }
     }
 }
