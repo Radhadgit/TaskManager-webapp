@@ -134,16 +134,19 @@ spec:
         }
     }
 
-    post {
-        always {
-            echo "Cleaning up workspace..."
-            cleanWs()
-        }
-        success {
-            echo "Build completed successfully!"
-        }
-        failure {
-            echo "Build failed. Check logs."
-        }
-    }
+    stage('Deploy AI Application') {
+            steps {
+                container('kubectl') {
+                    script {
+                            sh '''
+                                # Apply all resources in deployment YAML
+                                kubectl apply -f deplyment.yaml
+                                kubectl apply -f service.yaml
+
+                            '''
+                        
+                    }
+                }
+            }
+          }
 }
