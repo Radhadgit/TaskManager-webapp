@@ -18,6 +18,7 @@ spec:
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+
   - name: dind
     image: docker:24-dind
     securityContext:
@@ -26,6 +27,7 @@ spec:
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+
   - name: kubectl
     image: bitnami/kubectl:latest
     command: ["cat"]
@@ -36,6 +38,7 @@ spec:
         subPath: kubeconfig
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
     command: ["cat"]
@@ -43,6 +46,7 @@ spec:
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+
   - name: jnlp
     image: jenkins/inbound-agent:3345.v03dee9b_f88fc-1
     env:
@@ -51,6 +55,7 @@ spec:
     volumeMounts:
       - mountPath: /home/jenkins/agent
         name: workspace-volume
+
   volumes:
     - name: workspace-volume
       emptyDir: {}
@@ -68,6 +73,7 @@ spec:
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 git url: 'https://github.com/Radhadgit/TaskManager-webapp.git', branch: 'main'
@@ -125,9 +131,6 @@ spec:
                 container('dind') {
                     sh '''
                         echo "Docker push to Nexus/registry if configured"
-                        # docker login -u $NEXUS_USER -p $NEXUS_PASS $NEXUS_URL
-                        # docker tag $DOCKER_IMAGE $NEXUS_URL/$DOCKER_IMAGE
-                        # docker push $NEXUS_URL/$DOCKER_IMAGE
                     '''
                 }
             }
@@ -137,9 +140,8 @@ spec:
             steps {
                 container('kubectl') {
                     sh '''
-                        # Apply Kubernetes resources
-                        kubectl apply -f deployment.yaml
-                        kubectl apply -f service.yaml
+                        kubectl apply -f deployment.yaml -n 2401041
+                        kubectl apply -f service.yaml -n 2401041
                     '''
                 }
             }
