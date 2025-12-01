@@ -53,17 +53,6 @@ spec:
         }
     }
 
-    environment {
-        IMAGE_NAME      = "taskmanager-webapp"
-        IMAGE_TAG       = "${BUILD_NUMBER}"
-        REGISTRY_URL    = "nexus.imcc.com"
-        REGISTRY_REPO   = "docker-repo"
-        SONAR_PROJECT_KEY = "2401041-TaskManager"
-        SONAR_HOST_URL    = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
-        K8S_NAMESPACE     = "2401041"
-        K8S_DEPLOYMENT    = "taskmanager-deployment"
-    }
-
     stages {
 
         stage('Checkout Code') {
@@ -90,7 +79,7 @@ spec:
                 container('dind') {
                     sh '''
                         sleep 10
-                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                        docker build -t  taskmanager-webapp:latest .
                         docker image ls
                     '''
                 }
@@ -114,9 +103,9 @@ spec:
                     withCredentials([string(credentialsId: 'sonar-token-2401041', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             sonar-scanner \
-                              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                              -Dsonar.projectKey=2401041-TaskManager \
                               -Dsonar.sources=. \
-                              -Dsonar.host.url=${SONAR_HOST_URL} \
+                              -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
                               -Dsonar.login=$SONAR_TOKEN
                         '''
                     }
@@ -124,16 +113,22 @@ spec:
             }
         }
 
-        stage('Docker Push to Nexus') {
+        stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    withCredentials([usernamePassword(credentialsId: 'nexus-41', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                        sh '''
-                            docker login ${REGISTRY_URL} -u $NEXUS_USER -p $NEXUS_PASS
-                            docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker push ${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                        '''
-                    }
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
+                }
+            }
+        }
+        stage('Build - Tag - Push') {
+            steps {
+                container('dind') {
+                    sh 'docker tag taskmanager-webapp:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-webapp:latest'
+                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-webapp:latest'
+                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-webapp:latest'
+                    sh 'docker image ls'
                 }
             }
         }
@@ -142,22 +137,12 @@ spec:
             steps {
                 container('kubectl') {
                     sh '''
-                        kubectl set image deployment/${K8S_DEPLOYMENT} \
-                          ${IMAGE_NAME}=${REGISTRY_URL}/repository/${REGISTRY_REPO}/${IMAGE_NAME}:${IMAGE_TAG} \
-                          -n ${K8S_NAMESPACE}
-                        kubectl rollout status deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE}
+                        kubectl apply -f deplyment.yaml
+                        kubectl apply -f service.yaml
                     '''
                 }
             }
         }
     }
 
-    post {
-        success {
-            echo "✅ Deployment succeeded: ${IMAGE_NAME}:${IMAGE_TAG}"
-        }
-        failure {
-            echo "❌ Deployment Failed — Check Logs!"
-        }
-    }
 }

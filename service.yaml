@@ -12,3 +12,24 @@ spec:
       port: 3000
       targetPort: 3000
       nodePort: 32000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskmanager-ingress
+  namespace: 2401041
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: taskmanager.imcc.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: taskmanager-service
+                port:
+                  number: 3000
