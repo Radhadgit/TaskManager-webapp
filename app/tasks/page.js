@@ -265,10 +265,11 @@ function TasksContent() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="filter-status" className="block text-sm font-medium text-gray-700 mb-2">
                 Status
               </label>
               <select
+                id="filter-status"
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -280,10 +281,11 @@ function TasksContent() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="filter-priority" className="block text-sm font-medium text-gray-700 mb-2">
                 Priority
               </label>
               <select
+                id="filter-priority"
                 value={filters.priority}
                 onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -295,11 +297,12 @@ function TasksContent() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <label htmlFor="filter-startDate" className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                 <FaCalendarAlt className="text-gray-500" />
                 Start Date
               </label>
               <input
+                id="filter-startDate"
                 type="date"
                 value={filters.startDate}
                 onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
@@ -307,11 +310,12 @@ function TasksContent() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <label htmlFor="filter-endDate" className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                 <FaCalendarAlt className="text-gray-500" />
                 End Date
               </label>
               <input
+                id="filter-endDate"
                 type="date"
                 value={filters.endDate}
                 onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
@@ -341,57 +345,64 @@ function TasksContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tasks.map((task) => (
-              <div
-                key={task._id}
-                className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border-l-4 border-blue-500"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 flex-1">{task.title}</h3>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEdit(task)}
-                      className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded transition"
-                      title="Edit task"
-                    >
-                      <FaEdit />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(task._id)}
-                      className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded transition"
-                      title="Delete task"
-                    >
-                      <FaTrash />
-                    </button>
+            {tasks.map((task) => {
+              let deadlineClass = 'text-gray-600';
+              if (task.deadline && isOverdue(task.deadline)) {
+                deadlineClass = 'text-red-600 font-semibold';
+              }
+
+              return (
+                <div
+                  key={task._id}
+                  className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border-l-4 border-blue-500"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <h3 className="text-xl font-semibold text-gray-900 flex-1">{task.title}</h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(task)}
+                        className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded transition"
+                        title="Edit task"
+                      >
+                        <FaEdit />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(task._id)}
+                        className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded transition"
+                        title="Delete task"
+                      >
+                        <FaTrash />
+                      </button>
+                    </div>
                   </div>
+                  {task.description && (
+                    <p className="text-gray-600 mb-4 line-clamp-2">{task.description}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getPriorityColor(task.priority)}`}>
+                      {getPriorityIcon(task.priority)}
+                      {task.priority}
+                    </span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(task.status)}`}>
+                      {getStatusIcon(task.status)}
+                      {task.status}
+                    </span>
+                  </div>
+                  {task.deadline && (
+                    <p className={`text-sm flex items-center gap-2 ${deadlineClass}`}>
+                      <FaCalendarAlt />
+                      Deadline: {new Date(task.deadline).toLocaleDateString()}
+                      {isOverdue(task.deadline) && (
+                        <span className="text-red-600 flex items-center gap-1">
+                          <FaExclamationCircle />
+                          Overdue
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
-                {task.description && (
-                  <p className="text-gray-600 mb-4 line-clamp-2">{task.description}</p>
-                )}
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getPriorityColor(task.priority)}`}>
-                    {getPriorityIcon(task.priority)}
-                    {task.priority}
-                  </span>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(task.status)}`}>
-                    {getStatusIcon(task.status)}
-                    {task.status}
-                  </span>
-                </div>
-                {task.deadline && (
-                  <p className={`text-sm flex items-center gap-2 ${isOverdue(task.deadline) ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                    <FaCalendarAlt />
-                    Deadline: {new Date(task.deadline).toLocaleDateString()}
-                    {isOverdue(task.deadline) && (
-                      <span className="text-red-600 flex items-center gap-1">
-                        <FaExclamationCircle />
-                        Overdue
-                      </span>
-                    )}
-                  </p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -416,11 +427,12 @@ function TasksContent() {
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="task-title" className="block text-sm font-medium text-gray-700 mb-2">
                   Title *
                 </label>
                 <input
                   type="text"
+                  id="task-title"
                   required
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -429,10 +441,11 @@ function TasksContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="task-desc" className="block text-sm font-medium text-gray-700 mb-2">
                   Description
                 </label>
                 <textarea
+                  id="task-desc"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -442,10 +455,11 @@ function TasksContent() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="task-priority" className="block text-sm font-medium text-gray-700 mb-2">
                     Priority
                   </label>
                   <select
+                    id="task-priority"
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -456,10 +470,11 @@ function TasksContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="task-status" className="block text-sm font-medium text-gray-700 mb-2">
                     Status
                   </label>
                   <select
+                    id="task-status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -471,35 +486,34 @@ function TasksContent() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <label htmlFor="task-deadline" className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                   <FaCalendarAlt />
                   Deadline
                 </label>
                 <input
                   type="date"
+                  id="task-deadline"
                   value={formData.deadline}
                   onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
-              <div className="flex gap-4 pt-4">
-                <button
-                  type="submit"
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-medium transition flex items-center justify-center gap-2 shadow-md"
-                >
-                  <FaCheckCircle />
-                  {editingTask ? 'Update Task' : 'Create Task'}
-                </button>
+              <div className="flex justify-end gap-4 mt-4">
                 <button
                   type="button"
                   onClick={() => {
                     setShowModal(false);
                     setEditingTask(null);
                   }}
-                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 font-medium transition flex items-center justify-center gap-2"
+                  className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition"
                 >
-                  <FaTimes />
                   Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  {editingTask ? 'Update Task' : 'Create Task'}
                 </button>
               </div>
             </form>
@@ -510,17 +524,4 @@ function TasksContent() {
   );
 }
 
-export default function Tasks() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
-      </div>
-    }>
-      <TasksContent />
-    </Suspense>
-  );
-}
+export default TasksContent;
