@@ -125,6 +125,25 @@ spec:
                 }
             }
         }
+         stage('Login to Docker Registry') {
+            steps {
+                container('dind') {
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
+                }
+            }
+        }
+        stage('Build - Tag - Push') {
+            steps {
+                container('dind') {
+                    sh 'docker tag taskmanager-app:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401199-project/face-detection:latest'
+                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-app:latest'
+                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041-project/taskmanager-app:latest'
+                    sh 'docker image ls'
+                }
+            }
+        }
 
         stage('Push Docker Image (Optional)') {
             steps {
