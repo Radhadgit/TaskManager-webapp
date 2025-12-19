@@ -67,10 +67,12 @@ spec:
     }
 
     environment {
-        SONAR_TOKEN = '2401041_TaskManager'
-        DOCKER_IMAGE = "taskmanager-webapp:latest"
-        REGISTRY_URL = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-        REGISTRY_PROJECT = "2401041-project"
+        DOCKER_IMAGE  = "2401041-TaskManager"
+        // DOCKER_HOST removed -> use default unix:///var/run/docker.sock inside dind
+        SONAR_TOKEN   = "sqp_e9cbc6586722262385ddb640679a266b8221d52f"
+        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REGISTRY      = "${REGISTRY_HOST}/2401041"
+        NAMESPACE     = "2401041"
     }
 
     stages {
