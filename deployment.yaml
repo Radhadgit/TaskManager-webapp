@@ -25,7 +25,7 @@ spec:
           imagePullPolicy: Always
 
           ports:
-            - containerPort: 3000
+            - containerPort: 8000
 
           env:
             - name: MONGODB_URI
@@ -43,14 +43,14 @@ spec:
           readinessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 8000
             initialDelaySeconds: 15
             periodSeconds: 10
 
           livenessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 8000
             initialDelaySeconds: 40
             periodSeconds: 30
 
@@ -76,10 +76,9 @@ spec:
     app: taskmanager-app
   ports:
     - protocol: TCP
-      port: 3000
-      targetPort: 3000
-      nodePort: 32000
-  type: NodePort
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
 
 ---
 # =====================================================================
@@ -104,4 +103,4 @@ spec:
               service:
                 name: taskmanager-service
                 port:
-                  number: 3000
+                  number: 8000
