@@ -159,10 +159,13 @@ spec:
     }
 
     post {
-        always {
-            echo "Cleaning up workspace..."
-            cleanWs()
-        }
+ 
+    always {
+        echo "Cleaning up workspace..."
+        deleteDir()
+           }
+
+
         success {
             echo "Build completed successfully!"
         }
