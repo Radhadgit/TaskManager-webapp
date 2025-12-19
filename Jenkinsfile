@@ -132,17 +132,17 @@ spec:
             }
         }
 
-        stage('Deploy Application') {
+      stage('Deploy Application') {
     steps {
         container('kubectl') {
             sh '''
-                kubectl apply -f deplyment.yaml -n 2401041
-                kubectl apply -f service.yaml -n 2401041
-                kubectl rollout status deployment/taskmanager-app -n 2401041
+                kubectl apply -f deployment.yaml -n 2401041
+                kubectl rollout status deployment/taskmanager-deployment -n 2401041
             '''
         }
     }
 }
+
 
     }
 }

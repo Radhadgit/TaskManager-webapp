@@ -1,0 +1,107 @@
+# =====================================================================
+# DEPLOYMENT
+# =====================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskmanager-deployment
+  namespace: "2401041"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskmanager-app
+  template:
+    metadata:
+      labels:
+        app: taskmanager-app
+    spec:
+      imagePullSecrets:
+        - name: nexus-secret
+
+      containers:
+        - name: taskmanager-container
+          image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041/2401041-taskmanager-frontend:latest
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 3000
+
+          env:
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: taskmanager-secret
+                  key: MONGODB_URI
+
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: taskmanager-secret
+                  key: JWT_SECRET
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 40
+            periodSeconds: 30
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+---
+# =====================================================================
+# SERVICE
+# =====================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskmanager-service
+  namespace: "2401041"
+spec:
+  selector:
+    app: taskmanager-app
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+      nodePort: 32000
+  type: NodePort
+
+---
+# =====================================================================
+# INGRESS
+# =====================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskmanager-ingress
+  namespace: "2401041"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: taskmanager.imcc.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: taskmanager-service
+                port:
+                  number: 3000
