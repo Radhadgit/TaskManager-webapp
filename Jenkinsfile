@@ -138,7 +138,7 @@ spec:
             sh '''
                 kubectl apply -f deployment.yaml -n 2401041
                 kubectl apply -f service.yaml -n 2401041
-                kubectl rollout status deployment/2401041-taskmanager-frontend -n 2401041
+                kubectl rollout status deployment/taskmanager-app -n 2401041
             '''
         }
     }
