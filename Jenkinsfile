@@ -67,7 +67,7 @@ spec:
     }
 
     environment {
-        SONAR_TOKEN = credentials('sonar-token-2401041')
+        SONAR_TOKEN = credentials('2401041-TaskManager')
         DOCKER_IMAGE = "taskmanager-webapp:latest"
         REGISTRY_URL = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
         REGISTRY_PROJECT = "2401041-project"
