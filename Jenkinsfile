@@ -1,77 +1,62 @@
 pipeline {
     agent {
         kubernetes {
-            label '2401041-taskmanager-agent'
-            defaultContainer 'nodejs'
-            yaml """
+            yaml '''
 apiVersion: v1
 kind: Pod
-metadata:
-  labels:
-    app: taskmanager-agent
 spec:
   containers:
-  - name: nodejs
-    image: node:18-alpine
-    command: ["cat"]
-    tty: true
-    volumeMounts:
-      - mountPath: /home/jenkins/agent
-        name: workspace-volume
-
-  - name: dind
-    image: docker:24-dind
-    securityContext:
-      privileged: true
-    tty: true
-    volumeMounts:
-      - mountPath: /home/jenkins/agent
-        name: workspace-volume
-
-  - name: kubectl
-    image: bitnami/kubectl:latest
-    command: ["cat"]
-    tty: true
-    volumeMounts:
-      - mountPath: /kube/config
-        name: kubeconfig-secret
-        subPath: kubeconfig
-      - mountPath: /home/jenkins/agent
-        name: workspace-volume
 
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
     command: ["cat"]
     tty: true
-    volumeMounts:
-      - mountPath: /home/jenkins/agent
-        name: workspace-volume
 
-  - name: jnlp
-    image: jenkins/inbound-agent:3345.v03dee9b_f88fc-1
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command: ["cat"]
+    tty: true
+    securityContext:
+      runAsUser: 0
+      readOnlyRootFilesystem: false
     env:
-      - name: JENKINS_AGENT_WORKDIR
-        value: /home/jenkins/agent
+    - name: KUBECONFIG
+      value: /kube/config
     volumeMounts:
-      - mountPath: /home/jenkins/agent
-        name: workspace-volume
+    - name: kubeconfig-secret
+      mountPath: /kube/config
+      subPath: kubeconfig
+
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    volumeMounts:
+    - name: docker-config
+      mountPath: /etc/docker/daemon.json
+      subPath: daemon.json
 
   volumes:
-    - name: workspace-volume
-      emptyDir: {}
-    - name: kubeconfig-secret
-      secret:
-        secretName: kubeconfig-secret
-"""
+  - name: docker-config
+    configMap:
+      name: docker-daemon-config
+  - name: kubeconfig-secret
+    secret:
+      secretName: kubeconfig-secret
+'''
         }
     }
 
     environment {
-        DOCKER_IMAGE  = "2401041-taskmanager-frontend"
-        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-        REGISTRY_PATH = "2401041"
-        FULL_IMAGE    = "${REGISTRY_HOST}/${REGISTRY_PATH}/${DOCKER_IMAGE}:latest"
-        NAMESPACE     = "2401041"
+        APP_NAME        = "2401041-taskmanager-frontend"
+        IMAGE_TAG       = "latest"
+        REGISTRY_URL    = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REGISTRY_REPO   = "2401041"
+        SONAR_PROJECT   = "2401041-TaskManager"
+        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
     }
 
     stages {
@@ -82,32 +67,24 @@ spec:
             }
         }
 
-        stage('Install & Build') {
-            steps {
-                container('nodejs') {
-                    sh '''
-                        npm install
-                        npm run build
-                    '''
-                }
-            }
-        }
-
-        stage('Docker Build & Tag') {
+        stage('Build Docker Image') {
             steps {
                 container('dind') {
                     sh '''
-                        docker build -t $DOCKER_IMAGE .
-                        docker image ls
+                        sleep 15
+                        docker build -t $APP_NAME:$IMAGE_TAG .
+                        docker images
                     '''
                 }
             }
         }
 
-        stage('Run Tests') {
+        stage('Run Tests in Docker') {
             steps {
-                container('nodejs') {
-                    sh 'echo "Skipping tests or add npm test"'
+                container('dind') {
+                    sh '''
+                        echo "Frontend project – no pytest configured"
+                    '''
                 }
             }
         }
@@ -115,14 +92,16 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    withCredentials([string(credentialsId: '2401041-TaskManager', variable: 'SONAR_TOKEN')]) {
-                        sh """
+                    withCredentials([
+                        string(credentialsId: '2401041-TaskManager', variable: 'SONAR_TOKEN')
+                    ]) {
+                        sh '''
                             sonar-scanner \
-                            -Dsonar.projectKey=2401041-TaskManager \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-                            -Dsonar.login=$SONAR_TOKEN
-                        """
+                              -Dsonar.projectKey=$SONAR_PROJECT \
+                              -Dsonar.sources=. \
+                              -Dsonar.host.url=$SONAR_HOST_URL \
+                              -Dsonar.login=$SONAR_TOKEN
+                        '''
                     }
                 }
             }
@@ -131,53 +110,40 @@ spec:
         stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    withCredentials([usernamePassword(credentialsId: '2401041', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                        sh 'docker login $REGISTRY_HOST -u $NEXUS_USER -p $NEXUS_PASS'
-                    }
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
                 }
             }
         }
 
-        stage('Build - Tag - Push') {
+        stage('Build - Tag - Push Image') {
             steps {
                 container('dind') {
-                    withCredentials([usernamePassword(credentialsId: '2401041', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                        sh """
-                            docker build -t $DOCKER_IMAGE:latest .
-                            docker tag $DOCKER_IMAGE:latest $FULL_IMAGE
-                            docker login $REGISTRY_HOST -u $NEXUS_USER -p $NEXUS_PASS
-                            docker push $FULL_IMAGE
-                            docker image ls
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Deploy AI Application') {
-            steps {
-                container('kubectl') {
                     sh '''
-                        kubectl apply -f deployment.yaml -n 2401041
-                        kubectl apply -f service.yaml -n 2401041
+                        docker tag $APP_NAME:$IMAGE_TAG \
+                          $REGISTRY_URL/$REGISTRY_REPO/$APP_NAME:$IMAGE_TAG
+
+                        docker push $REGISTRY_URL/$REGISTRY_REPO/$APP_NAME:$IMAGE_TAG
+                        docker pull $REGISTRY_URL/$REGISTRY_REPO/$APP_NAME:$IMAGE_TAG
+                        docker images
                     '''
                 }
             }
         }
-    }
 
-    post {
-        always {
-            echo "Cleaning up workspace..."
-            deleteDir()
-        }
-
-        success {
-            echo "Build completed successfully!"
-        }
-
-        failure {
-            echo "Build failed. Check logs."
+        stage('Deploy Application') {
+            steps {
+                container('kubectl') {
+                    dir('k8s-deployment') {
+                        sh '''
+                            kubectl apply -f deployment.yaml -n 2401041
+                            kubectl apply -f service.yaml -n 2401041
+                            kubectl rollout status deployment/2401041-taskmanager-frontend -n 2401041
+                        '''
+                    }
+                }
+            }
         }
     }
 }
