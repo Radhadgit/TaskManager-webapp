@@ -67,10 +67,10 @@ spec:
     }
 
     environment {
-        DOCKER_IMAGE  = "2401041-TaskManager"
+        DOCKER_IMAGE  = "2401041-taskmanager-frontend:latest"
         // DOCKER_HOST removed -> use default unix:///var/run/docker.sock inside dind
         SONAR_TOKEN   = "sqp_e9cbc6586722262385ddb640679a266b8221d52f"
-        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REGISTRY_HOST = "image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041/2401041-taskmanager-frontend:latest"
         REGISTRY      = "${REGISTRY_HOST}/2401041"
         NAMESPACE     = "2401041"
     }
@@ -130,7 +130,7 @@ spec:
         stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    sh 'docker login $REGISTRY_URL -u admin -p Changeme@2025'
+                    sh 'docker login $REGISTRY_HOST -u admin -p Changeme@2025'
                 }
             }
         }

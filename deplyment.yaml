@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: taskmanager-container
-          image: 12.0.0.1:30085/2401041-project/taskmanager-webapp:latest
+          image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401041/2401041-taskmanager-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
